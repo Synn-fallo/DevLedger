@@ -1,0 +1,219 @@
+import { useEffect, useState } from 'react';
+import { AdminLayout } from '../../components/admin/AdminLayout';
+import { StatsCard } from '../../components/admin/StatsCard';
+import { Users, FolderKanban, CreditCard, Bug, TrendingUp, Calendar, DollarSign, Activity } from 'lucide-react';
+import { supabase } from '../../lib/supabase';
+import { useAdmin } from '../../hooks/useAdmin';
+
+interface AdminDashboardProps {
+  currentPage?: string;
+  onNavigate?: (page: string) => void;
+}
+
+export function AdminDashboard({ currentPage, onNavigate }: AdminDashboardProps) {
+  const { isAdmin } = useAdmin();
+  const [stats, setStats] = useState({
+    totalUsers: 0,
+    newUsersThisMonth: 0,
+    totalProjects: 0,
+    newProjectsThisMonth: 0,
+    totalSessions: 0,
+    totalTimeMinutes: 0,
+    totalBugs: 0,
+    openBugs: 0,
+    totalRevenue: 0,
+    proUsers: 0,
+    enterpriseUsers: 0
+  });
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (isAdmin) {
+      loadStats();
+    }
+  }, [isAdmin]);
+
+  const loadStats = async () => {
+    setLoading(true);
+
+    // Nombre d'utilisateurs
+    const { count: totalUsers } = await supabase
+      .from('users_settings')
+      .select('*', { count: 'exact', head: true });
+
+    // Nouveaux utilisateurs ce mois
+    const firstDayOfMonth = new Date();
+    firstDayOfMonth.setDate(1);
+    firstDayOfMonth.setHours(0, 0, 0, 0);
+    
+    const { count: newUsers } = await supabase
+      .from('users_settings')
+      .select('*', { count: 'exact', head: true })
+      .gte('created_at', firstDayOfMonth.toISOString());
+
+    // Nombre de projets
+    const { count: totalProjects } = await supabase
+      .from('projects')
+      .select('*', { count: 'exact', head: true });
+
+    // Nouveaux projets ce mois
+    const { count: newProjects } = await supabase
+      .from('projects')
+      .select('*', { count: 'exact', head: true })
+      .gte('created_at', firstDayOfMonth.toISOString());
+
+    // Sessions
+    const { data: sessions } = await supabase
+      .from('sessions')
+      .select('tokens_consumed, time_bolt, time_chatgpt, time_deepseek, time_other');
+    
+    const totalSessions = sessions?.length || 0;
+    const totalTimeMinutes = sessions?.reduce((sum, s) => 
+      sum + s.time_bolt + s.time_chatgpt + (s as any).time_deepseek + s.time_other, 0) || 0;
+
+    // Bugs
+    const { count: totalBugs } = await supabase
+      .from('bug_reports')
+      .select('*', { count: 'exact', head: true });
+    
+    const { count: openBugs } = await supabase
+      .from('bug_reports')
+      .select('*', { count: 'exact', head: true })
+      .in('status', ['open', 'in_progress']);
+
+    // Abonnements
+    const { data: subscriptions } = await supabase
+      .from('users_settings')
+      .select('subscription_plan');
+    
+    const proUsers = subscriptions?.filter(s => s.subscription_plan === 'pro').length || 0;
+    const enterpriseUsers = subscriptions?.filter(s => s.subscription_plan === 'enterprise').length || 0;
+
+    // Revenus (simulés - à remplacer par les vrais paiements)
+    const totalRevenue = proUsers * 5000 + enterpriseUsers * 25000;
+
+    setStats({
+      totalUsers: totalUsers || 0,
+      newUsersThisMonth: newUsers || 0,
+      totalProjects: totalProjects || 0,
+      newProjectsThisMonth: newProjects || 0,
+      totalSessions,
+      totalTimeMinutes,
+      totalBugs: totalBugs || 0,
+      openBugs: openBugs || 0,
+      totalRevenue,
+      proUsers,
+      enterpriseUsers
+    });
+
+    setLoading(false);
+  };
+
+  const formatTime = (minutes: number) => {
+    const hours = Math.floor(minutes / 60);
+    const mins = minutes % 60;
+    if (hours === 0) return `${mins} min`;
+    return `${hours}h ${mins}m`;
+  };
+
+  if (!isAdmin) return null;
+
+  if (loading) {
+    return (
+      <AdminLayout title="Dashboard" currentPage={currentPage} onNavigate={onNavigate}>
+        <div className="flex items-center justify-center h-64">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+        </div>
+      </AdminLayout>
+    );
+  }
+
+  return (
+    <AdminLayout title="Dashboard" currentPage={currentPage} onNavigate={onNavigate}>
+      <div className="space-y-6">
+        {/* Première ligne de stats */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+          <StatsCard
+            title="Utilisateurs"
+            value={stats.totalUsers}
+            icon={Users}
+            color="blue"
+            trend={{ value: 12, isPositive: true }}
+          >
+            <p className="text-xs text-gray-500">+{stats.newUsersThisMonth} ce mois</p>
+          </StatsCard>
+          
+          <StatsCard
+            title="Projets"
+            value={stats.totalProjects}
+            icon={FolderKanban}
+            color="green"
+          >
+            <p className="text-xs text-gray-500">+{stats.newProjectsThisMonth} ce mois</p>
+          </StatsCard>
+          
+          <StatsCard
+            title="Sessions"
+            value={stats.totalSessions}
+            icon={Activity}
+            color="purple"
+          >
+            <p className="text-xs text-gray-500">{formatTime(stats.totalTimeMinutes)} au total</p>
+          </StatsCard>
+          
+          <StatsCard
+            title="Bugs"
+            value={stats.totalBugs}
+            icon={Bug}
+            color="red"
+          >
+            <p className="text-xs text-gray-500">{stats.openBugs} ouverts / {stats.totalBugs - stats.openBugs} résolus</p>
+          </StatsCard>
+        </div>
+
+        {/* Deuxième ligne de stats */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+          <StatsCard
+            title="Chiffre d'affaires"
+            value={`${stats.totalRevenue.toLocaleString()} XOF`}
+            icon={DollarSign}
+            color="green"
+          />
+          
+          <StatsCard
+            title="Abonnements Pro"
+            value={stats.proUsers}
+            icon={TrendingUp}
+            color="blue"
+          />
+          
+          <StatsCard
+            title="Abonnements Enterprise"
+            value={stats.enterpriseUsers}
+            icon={Calendar}
+            color="purple"
+          />
+          
+          <StatsCard
+            title="Taux de conversion"
+            value={`${((stats.proUsers + stats.enterpriseUsers) / (stats.totalUsers || 1) * 100).toFixed(1)}%`}
+            icon={CreditCard}
+            color="yellow"
+          />
+        </div>
+
+        {/* Graphiques ou sections supplémentaires */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div className="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Activité récente</h3>
+            <p className="text-gray-500 text-center py-8">Graphiques à implémenter</p>
+          </div>
+          <div className="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Répartition des abonnements</h3>
+            <p className="text-gray-500 text-center py-8">Diagramme circulaire à implémenter</p>
+          </div>
+        </div>
+      </div>
+    </AdminLayout>
+  );
+}

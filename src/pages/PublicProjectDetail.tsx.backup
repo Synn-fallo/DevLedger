@@ -1,0 +1,386 @@
+import { useEffect, useState } from 'react';
+import { useParams, Link } from 'react-router-dom';
+import { Heart, MessageCircle, Eye, ArrowLeft, Send, User, Mail, Calendar, Clock, ThumbsUp, X } from 'lucide-react';
+import { supabase } from '../lib/supabase';
+import { metricsService, type Comment } from '../services/metrics.service';
+import { Footer } from '../components/Footer';
+import { CollaborationRequestForm } from '../components/public/CollaborationRequestForm';
+
+export function PublicProjectDetail() {
+  const { projectId } = useParams();
+  const [project, setProject] = useState<any>(null);
+  const [views, setViews] = useState(0);
+  const [likes, setLikes] = useState(0);
+  const [comments, setComments] = useState<Comment[]>([]);
+  const [userHasLiked, setUserHasLiked] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [userId, setUserId] = useState<string | null>(null);
+  const [sessionCount, setSessionCount] = useState(0);
+  const [totalTime, setTotalTime] = useState(0);
+  const [showAuthModal, setShowAuthModal] = useState(false);
+  
+  // Formulaire de commentaire
+  const [authorName, setAuthorName] = useState('');
+  const [authorEmail, setAuthorEmail] = useState('');
+  const [commentContent, setCommentContent] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [submitSuccess, setSubmitSuccess] = useState(false);
+
+  useEffect(() => {
+    loadUser();
+    if (projectId) {
+      loadProject();
+      loadMetrics();
+      loadComments();
+      loadProjectStats();
+      // Enregistrer une vue
+      metricsService.addView(projectId);
+    }
+  }, [projectId]);
+
+  const loadUser = async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    setUserId(user?.id || null);
+  };
+
+  const loadProject = async () => {
+    if (!projectId) return;
+    
+    const { data, error } = await supabase
+      .from('projects')
+      .select('id, name, description, visibility, created_at, updated_at')
+      .eq('id', projectId)
+      .eq('visibility', 'public')
+      .single();
+
+    if (error || !data) {
+      window.location.href = '/public';
+      return;
+    }
+
+    setProject(data);
+    setLoading(false);
+  };
+
+  const loadProjectStats = async () => {
+    if (!projectId) return;
+    
+    const { data: sessions } = await supabase
+      .from('sessions')
+      .select('id, time_bolt, time_chatgpt, time_deepseek, time_other')
+      .eq('project_id', projectId);
+    
+    if (sessions) {
+      setSessionCount(sessions.length);
+      const total = sessions.reduce((sum, s) => 
+        sum + (s.time_bolt || 0) + (s.time_chatgpt || 0) + (s.time_deepseek || 0) + (s.time_other || 0), 0);
+      setTotalTime(total);
+    }
+  };
+
+  const loadMetrics = async () => {
+    if (!projectId) return;
+    
+    const [viewsCount, likesCount, hasLiked] = await Promise.all([
+      metricsService.getViewsCount(projectId),
+      metricsService.getLikesCount(projectId),
+      metricsService.hasUserLiked(projectId)
+    ]);
+    
+    setViews(viewsCount);
+    setLikes(likesCount);
+    setUserHasLiked(hasLiked);
+  };
+
+  const loadComments = async () => {
+    if (!projectId) return;
+    const commentsData = await metricsService.getComments(projectId, true);
+    setComments(commentsData);
+  };
+
+  const handleLike = async () => {
+    if (!userId) {
+      setShowAuthModal(true);
+      return;
+    }
+    
+    if (userHasLiked) {
+      await metricsService.removeLike(projectId!);
+      setLikes(prev => prev - 1);
+      setUserHasLiked(false);
+    } else {
+      await metricsService.addLike(projectId!);
+      setLikes(prev => prev + 1);
+      setUserHasLiked(true);
+    }
+  };
+
+  const handleSubmitComment = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!projectId || !authorName.trim() || !authorEmail.trim() || !commentContent.trim()) return;
+    
+    setSubmitting(true);
+    setSubmitSuccess(false);
+    
+    const comment = await metricsService.addComment(
+      projectId,
+      authorName.trim(),
+      authorEmail.trim(),
+      commentContent.trim()
+    );
+    
+    if (comment) {
+      setSubmitSuccess(true);
+      setAuthorName('');
+      setAuthorEmail('');
+      setCommentContent('');
+      // Recharger les commentaires
+      loadComments();
+      setTimeout(() => setSubmitSuccess(false), 3000);
+    }
+    
+    setSubmitting(false);
+  };
+
+  const formatDate = (dateString: string) => {
+    return new Date(dateString).toLocaleDateString('fr-FR', {
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric'
+    });
+  };
+
+  const formatTime = (minutes: number) => {
+    const hours = Math.floor(minutes / 60);
+    const mins = minutes % 60;
+    if (hours === 0) return `${mins} min`;
+    return `${hours}h ${mins}m`;
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-50 dark:bg-gray-950 flex items-center justify-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+      </div>
+    );
+  }
+
+  if (!project) {
+    return (
+      <div className="min-h-screen bg-gray-50 dark:bg-gray-950 flex items-center justify-center">
+        <div className="text-center">
+          <p className="text-gray-500">Projet non trouvé</p>
+          <Link to="/public" className="text-blue-600 hover:underline mt-2 inline-block">Retour aux projets publics</Link>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-950 flex flex-col">
+      <div className="flex-1">
+        {/* En-tête - Version sobre neutre */}
+        <div className="bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800">
+          <div className="max-w-4xl mx-auto px-4 py-10">
+            <Link to="/public" className="inline-flex items-center gap-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 mb-6 transition-colors">
+              <ArrowLeft className="w-4 h-4" />
+              Retour aux projets publics
+            </Link>
+            <h1 className="text-3xl md:text-4xl font-bold text-gray-900 dark:text-white">{project.name}</h1>
+            <p className="text-gray-600 dark:text-gray-400 mt-3 max-w-2xl">{project.description}</p>
+            
+            <div className="flex flex-wrap items-center gap-6 mt-6">
+              <button
+                onClick={handleLike}
+                className="flex items-center gap-2 px-4 py-2 rounded-lg bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
+              >
+                <Heart className={`w-5 h-5 transition-colors ${userHasLiked ? 'fill-red-500 text-red-500' : ''}`} />
+                <span>{likes}</span>
+              </button>
+              <div className="flex items-center gap-2 text-gray-600 dark:text-gray-400">
+                <Eye className="w-5 h-5" />
+                <span>{views} vues</span>
+              </div>
+              <div className="flex items-center gap-2 text-gray-600 dark:text-gray-400">
+                <MessageCircle className="w-5 h-5" />
+                <span>{comments.length} commentaires</span>
+              </div>
+              <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-500">
+                <Calendar className="w-4 h-4" />
+                <span>Créé le {formatDate(project.created_at)}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Statistiques supplémentaires (sans données sensibles) */}
+        <div className="max-w-4xl mx-auto px-4 py-6">
+          <div className="bg-white dark:bg-gray-800 rounded-xl p-4 border border-gray-200 dark:border-gray-700 mb-8">
+            <div className="grid grid-cols-2 gap-4 text-center">
+              <div>
+                <p className="text-2xl font-bold text-gray-900 dark:text-white">{sessionCount}</p>
+                <p className="text-xs text-gray-500">sessions de travail</p>
+              </div>
+              <div>
+                <p className="text-2xl font-bold text-gray-900 dark:text-white">{formatTime(totalTime)}</p>
+                <p className="text-xs text-gray-500">temps investi</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Section commentaires */}
+        <div className="max-w-4xl mx-auto px-4 py-8">
+          <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-6">Commentaires ({comments.length})</h2>
+          
+          {/* Formulaire d'ajout de commentaire */}
+          <form onSubmit={handleSubmitComment} className="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700 mb-8">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Laisser un commentaire</h3>
+            
+            {submitSuccess && (
+              <div className="mb-4 p-3 bg-green-100 dark:bg-green-900/30 border border-green-300 dark:border-green-700 rounded-lg text-green-700 dark:text-green-300 text-sm">
+                Votre commentaire a été envoyé et sera publié après approbation.
+              </div>
+            )}
+            
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Nom *
+                  </label>
+                  <input
+                    type="text"
+                    value={authorName}
+                    onChange={(e) => setAuthorName(e.target.value)}
+                    required
+                    className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    placeholder="Votre nom"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Email *
+                  </label>
+                  <input
+                    type="email"
+                    value={authorEmail}
+                    onChange={(e) => setAuthorEmail(e.target.value)}
+                    required
+                    className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    placeholder="votre@email.com"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Commentaire *
+                </label>
+                <textarea
+                  value={commentContent}
+                  onChange={(e) => setCommentContent(e.target.value)}
+                  required
+                  rows={4}
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  placeholder="Votre message..."
+                />
+              </div>
+              <button
+                type="submit"
+                disabled={submitting}
+                className="flex items-center gap-2 px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors disabled:opacity-50"
+              >
+                <Send className="w-4 h-4" />
+                {submitting ? 'Envoi...' : 'Envoyer'}
+              </button>
+              <p className="text-xs text-gray-500">
+                Votre commentaire sera publié après approbation par le propriétaire du projet.
+              </p>
+            </div>
+          </form>
+
+          {/* Liste des commentaires approuvés */}
+          <div className="space-y-4">
+            {comments.length === 0 ? (
+              <div className="text-center py-8 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700">
+                <MessageCircle className="w-12 h-12 text-gray-400 mx-auto mb-2" />
+                <p className="text-gray-500">Soyez le premier à laisser un commentaire</p>
+              </div>
+            ) : (
+              comments.map((comment) => (
+                <div key={comment.id} className="bg-white dark:bg-gray-800 rounded-xl p-4 border border-gray-200 dark:border-gray-700 hover:shadow-md transition-shadow">
+                  <div className="flex items-start gap-3">
+                    <div className="w-10 h-10 rounded-full bg-gradient-to-r from-blue-500 to-indigo-500 flex items-center justify-center flex-shrink-0 text-white font-bold">
+                      {comment.author_name.charAt(0).toUpperCase()}
+                    </div>
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-semibold text-gray-900 dark:text-white">{comment.author_name}</span>
+                        <span className="text-xs text-gray-400">
+                          {new Date(comment.created_at).toLocaleDateString('fr-FR', {
+                            day: 'numeric',
+                            month: 'short',
+                            year: 'numeric'
+                          })}
+                        </span>
+                      </div>
+                      <p className="text-gray-700 dark:text-gray-300 mt-2">{comment.content}</p>
+                    </div>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+
+        {/* Formulaire de demande de collaboration */}
+        <div className="max-w-4xl mx-auto px-4 py-8">
+          <CollaborationRequestForm
+            projectId={project.id}
+            projectName={project.name}
+          />
+        </div>
+      </div>
+
+      {/* Modale de connexion */}
+      {showAuthModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-gray-800 rounded-xl max-w-md w-full p-6 relative">
+            <button
+              onClick={() => setShowAuthModal(false)}
+              className="absolute top-4 right-4 p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+            >
+              <X className="w-5 h-5 text-gray-500" />
+            </button>
+            
+            <div className="text-center">
+              <div className="w-16 h-16 bg-blue-100 dark:bg-blue-900/30 rounded-full flex items-center justify-center mx-auto mb-4">
+                <Heart className="w-8 h-8 text-blue-600 dark:text-blue-400" />
+              </div>
+              <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-2">
+                Connectez-vous pour liker
+              </h2>
+              <p className="text-gray-600 dark:text-gray-400 mb-6">
+                Créez un compte ou connectez-vous pour interagir avec les projets de la communauté.
+              </p>
+              <div className="flex flex-col gap-3">
+                <Link
+                  to="/auth"
+                  className="w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+                >
+                  Se connecter / S'inscrire
+                </Link>
+                <button
+                  onClick={() => setShowAuthModal(false)}
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                >
+                  Plus tard
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

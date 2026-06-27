@@ -1,0 +1,143 @@
+-- =====================================================
+-- MIGRATION: Création des tables pour les demandes de collaboration
+-- Date: 2026-04-08
+-- =====================================================
+
+BEGIN;
+
+-- 1. Table des demandes de collaboration
+CREATE TABLE IF NOT EXISTS collaboration_requests (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  project_id UUID REFERENCES projects(id) ON DELETE CASCADE,
+  requester_email VARCHAR(255) NOT NULL,
+  requester_name VARCHAR(255) NOT NULL,
+  message TEXT NOT NULL,
+  status VARCHAR(20) DEFAULT 'pending',
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  CONSTRAINT valid_status CHECK (status IN ('pending', 'accepted', 'rejected', 'cancelled'))
+);
+
+-- 2. Table des messages de chat pour les collaborations
+CREATE TABLE IF NOT EXISTS collaboration_messages (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  request_id UUID NOT NULL REFERENCES collaboration_requests(id) ON DELETE CASCADE,
+  sender_email VARCHAR(255) NOT NULL,
+  sender_name VARCHAR(255) NOT NULL,
+  message TEXT NOT NULL,
+  is_read BOOLEAN DEFAULT FALSE,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- 3. Index pour optimiser les recherches
+CREATE INDEX IF NOT EXISTS idx_collaboration_requests_project_id ON collaboration_requests(project_id);
+CREATE INDEX IF NOT EXISTS idx_collaboration_requests_status ON collaboration_requests(status);
+CREATE INDEX IF NOT EXISTS idx_collaboration_requests_created_at ON collaboration_requests(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_collaboration_messages_request_id ON collaboration_messages(request_id);
+CREATE INDEX IF NOT EXISTS idx_collaboration_messages_is_read ON collaboration_messages(is_read);
+
+-- 4. Trigger pour updated_at sur collaboration_requests
+CREATE OR REPLACE FUNCTION update_collaboration_requests_updated_at()
+RETURNS TRIGGER AS $$
+BEGIN
+  NEW.updated_at = NOW();
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trigger_update_collaboration_requests_updated_at
+BEFORE UPDATE ON collaboration_requests
+FOR EACH ROW
+EXECUTE FUNCTION update_collaboration_requests_updated_at();
+
+-- 5. Row Level Security (RLS)
+ALTER TABLE collaboration_requests ENABLE ROW LEVEL SECURITY;
+ALTER TABLE collaboration_messages ENABLE ROW LEVEL SECURITY;
+
+-- Politiques pour collaboration_requests
+CREATE POLICY "Anyone can insert collaboration requests"
+ON collaboration_requests FOR INSERT
+WITH CHECK (true);
+
+CREATE POLICY "Project owners can view requests for their projects"
+ON collaboration_requests FOR SELECT
+USING (
+  EXISTS (
+    SELECT 1 FROM projects
+    WHERE projects.id = collaboration_requests.project_id
+    AND projects.user_id = auth.uid()
+  )
+);
+
+CREATE POLICY "Requesters can view their own requests"
+ON collaboration_requests FOR SELECT
+USING (requester_email = auth.email());
+
+CREATE POLICY "Project owners can update requests"
+ON collaboration_requests FOR UPDATE
+USING (
+  EXISTS (
+    SELECT 1 FROM projects
+    WHERE projects.id = collaboration_requests.project_id
+    AND projects.user_id = auth.uid()
+  )
+);
+
+-- Politiques pour collaboration_messages
+CREATE POLICY "Users can insert messages in their requests"
+ON collaboration_messages FOR INSERT
+WITH CHECK (
+  EXISTS (
+    SELECT 1 FROM collaboration_requests
+    WHERE collaboration_requests.id = collaboration_messages.request_id
+    AND (
+      collaboration_requests.requester_email = auth.email()
+      OR EXISTS (
+        SELECT 1 FROM projects
+        WHERE projects.id = collaboration_requests.project_id
+        AND projects.user_id = auth.uid()
+      )
+    )
+  )
+);
+
+CREATE POLICY "Users can view messages in their requests"
+ON collaboration_messages FOR SELECT
+USING (
+  EXISTS (
+    SELECT 1 FROM collaboration_requests
+    WHERE collaboration_requests.id = collaboration_messages.request_id
+    AND (
+      collaboration_requests.requester_email = auth.email()
+      OR EXISTS (
+        SELECT 1 FROM projects
+        WHERE projects.id = collaboration_requests.project_id
+        AND projects.user_id = auth.uid()
+      )
+    )
+  )
+);
+
+CREATE POLICY "Users can update read status"
+ON collaboration_messages FOR UPDATE
+USING (
+  EXISTS (
+    SELECT 1 FROM collaboration_requests
+    WHERE collaboration_requests.id = collaboration_messages.request_id
+    AND (
+      collaboration_requests.requester_email = auth.email()
+      OR EXISTS (
+        SELECT 1 FROM projects
+        WHERE projects.id = collaboration_requests.project_id
+        AND projects.user_id = auth.uid()
+      )
+    )
+  )
+);
+
+-- 6. Commentaires
+COMMENT ON TABLE collaboration_requests IS 'Demandes de collaboration des visiteurs vers les propriétaires de projets';
+COMMENT ON TABLE collaboration_messages IS 'Messages échangés dans le cadre d''une demande de collaboration';
+COMMENT ON COLUMN collaboration_requests.status IS 'pending, accepted, rejected, cancelled';
+
+COMMIT;

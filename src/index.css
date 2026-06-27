@@ -1,0 +1,199 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ========================================
+   ANTI-FLASH - FOND IMMÉDIAT POUR MODE SOMBRE
+   ======================================== */
+
+/* Appliquer immédiatement le fond sombre par défaut */
+:root {
+  color-scheme: dark light;
+}
+
+html {
+  background-color: #111827;
+}
+
+body {
+  background-color: #111827;
+  margin: 0;
+  padding: 0;
+  min-height: 100vh;
+}
+
+/* Quand le mode clair est activé, la classe .dark est retirée */
+html:not(.dark) body {
+  background-color: #f9fafb;
+}
+
+/* Transition douce pour le thème */
+html {
+  transition: background-color 0.2s ease;
+}
+
+body {
+  transition: background-color 0.2s ease;
+}
+
+/* ========================================
+   TRANSITIONS DOUCES POUR LE CHANGEMENT DE THÈME
+   ======================================== */
+
+/* Transition pour tous les éléments affectés par le thème */
+* {
+  transition: background-color 0.2s ease-in-out, 
+              border-color 0.2s ease-in-out,
+              color 0.15s ease-in-out,
+              box-shadow 0.2s ease-in-out;
+}
+
+/* Désactiver les transitions sur les éléments qui ne doivent pas être animés */
+.no-transition,
+.no-transition * {
+  transition: none !important;
+}
+
+/* ========================================
+   CONFIGURATION DU MODE SOMBRE
+   ======================================== */
+
+/* Définir le color-scheme pour le navigateur */
+:root {
+  color-scheme: light;
+}
+
+.dark {
+  color-scheme: dark;
+}
+
+/* Styles de base pour le body selon le thème */
+body {
+  @apply bg-white text-gray-900 antialiased;
+  font-feature-settings: "rlig" 1, "calt" 1;
+}
+
+.dark body {
+  @apply bg-gray-900 text-gray-100;
+}
+
+/* ========================================
+   STYLES POUR LE SCROLLBAR (optionnel mais amélioration UX)
+   ======================================== */
+
+/* Scrollbar personnalisée pour les navigateurs webkit (Chrome, Safari, Edge) */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  @apply bg-gray-100 dark:bg-gray-800;
+}
+
+::-webkit-scrollbar-thumb {
+  @apply bg-gray-400 dark:bg-gray-600 rounded-lg;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  @apply bg-gray-500 dark:bg-gray-500;
+}
+
+/* ========================================
+   STYLES POUR LA SÉLECTION DE TEXTE
+   ======================================== */
+
+::selection {
+  @apply bg-blue-500 text-white;
+}
+
+.dark ::selection {
+  @apply bg-blue-600 text-white;
+}
+
+/* ========================================
+   STYLES POUR LES PLACEHOLDERS
+   ======================================== */
+
+::placeholder {
+  @apply text-gray-400 dark:text-gray-500 opacity-100;
+}
+
+/* ========================================
+   STYLES POUR LES LIENS (optionnel)
+   ======================================== */
+
+a {
+  @apply text-blue-600 dark:text-blue-400 transition-colors;
+}
+
+a:hover {
+  @apply text-blue-700 dark:text-blue-300;
+}
+
+/* ========================================
+   STYLES POUR LES BORDS DES CARTES ET INPUTS
+   ======================================== */
+
+.card-hover {
+  @apply transition-all duration-200 hover:shadow-lg hover:-translate-y-0.5;
+}
+
+/* ========================================
+   ANIMATIONS POUR LE CHARGEMENT (optionnel)
+   ======================================== */
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+.animate-pulse-slow {
+  animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* ========================================
+   STYLES POUR LE MODE SIMPLE/AVANCÉ (optionnel)
+   ======================================== */
+
+.simple-mode .advanced-only {
+  display: none;
+}
+
+.advanced-mode .simple-only {
+  display: none;
+}
+
+/* ========================================
+   UTILITAIRES POUR LE DÉBUG (à supprimer en prod)
+   ======================================== */
+
+.debug {
+  border: 1px solid red;
+}
+
+.debug-green {
+  border: 1px solid green;
+}
+
+/* ========================================
+   MÉDIAS QUERIES POUR L'IMPRESSION (optionnel)
+   ======================================== */
+
+@media print {
+  .no-print {
+    display: none !important;
+  }
+  
+  body {
+    @apply bg-white text-black;
+  }
+  
+  .dark body {
+    @apply bg-white text-black;
+  }
+}

@@ -1,0 +1,175 @@
+import { useState } from 'react';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { AuthProvider, useAuth } from './contexts/AuthContext';
+import { ThemeProvider } from './contexts/ThemeContext';
+import { SettingsProvider } from './contexts/SettingsContext';
+import { SubscriptionProvider } from './contexts/SubscriptionContext';
+import { AdminProvider } from './contexts/AdminContext';
+import { Layout } from './components/Layout';
+import { PublicLayout } from './components/PublicLayout';
+import { Auth } from './pages/Auth';
+import { Dashboard } from './pages/Dashboard';
+import { Projects } from './pages/Projects';
+import { Priorities } from './pages/Priorities';
+import { ProjectDetail } from './pages/ProjectDetail';
+import { Timeline } from './pages/Timeline';
+import { Analytics } from './pages/Analytics';
+import { Export } from './pages/Export';
+import { Settings } from './pages/Settings';
+import { Profile } from './pages/Profile';
+import { BugsPage } from './pages/BugsPage';
+import { Subscription } from './pages/Subscription';
+import { PromptIA } from './pages/PromptIA';
+import { AdminDashboard } from './pages/admin/AdminDashboard';
+import { UsersList } from './pages/admin/UsersList';
+import { UserDetail } from './pages/admin/UserDetail';
+import { ProjectsList } from './pages/admin/ProjectsList';
+import { SubscriptionsList } from './pages/admin/SubscriptionsList';
+import { SystemSettings } from './pages/admin/SystemSettings';
+import { LogsViewer } from './pages/admin/LogsViewer';
+import { FinancialDashboard } from './pages/admin/FinancialDashboard';
+import { Cgu } from './pages/legal/Cgu';
+import { Confidentialite } from './pages/legal/Confidentialite';
+import { MentionsLegales } from './pages/legal/MentionsLegales';
+import { PublicProjectsPage } from './pages/PublicProjectsPage';
+import { PublicProjectDetail } from './pages/PublicProjectDetail';
+import { TechnicalHelpPage } from './pages/TechnicalHelpPage';
+
+function AppContent() {
+  const { user, loading } = useAuth();
+  const [currentPage, setCurrentPage] = useState('dashboard');
+  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
+  const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
+
+  const handleNavigate = (page: string, id?: string) => {
+    console.log('🔍 Navigation vers:', page, id);
+    setCurrentPage(page);
+    if (id) {
+      if (page === 'admin_user_detail') {
+        setSelectedUserId(id);
+      } else {
+        setSelectedProjectId(id);
+      }
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-screen bg-gray-50 dark:bg-gray-950">
+        <div className="text-center">
+          <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+          <p className="text-gray-600 dark:text-gray-400">Chargement...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return <Auth />;
+  }
+
+  const renderPage = () => {
+    switch (currentPage) {
+      case 'dashboard':
+        return <Dashboard onNavigate={handleNavigate} />;
+      case 'projects':
+        return <Projects onNavigate={handleNavigate} />;
+      case 'bugs':
+        return <BugsPage onNavigate={handleNavigate} />;
+      case 'priorities':
+        return <Priorities onNavigate={handleNavigate} />;
+      case 'project':
+        return selectedProjectId ? (
+          <ProjectDetail projectId={selectedProjectId} onNavigate={handleNavigate} />
+        ) : (
+          <Projects onNavigate={handleNavigate} />
+        );
+      case 'timeline':
+        return <Timeline onNavigate={handleNavigate} />;
+      case 'analytics':
+        return <Analytics />;
+      case 'export':
+        return <Export />;
+      case 'settings':
+        return <Settings />;
+      case 'profile':
+        return <Profile />;
+      case 'subscription':
+        return <Subscription />;
+      case 'prompt':
+        return <PromptIA />;
+      case 'public-projects':
+        return <PublicProjectsPage />;
+      case 'admin_dashboard':
+        return <AdminDashboard currentPage={currentPage} onNavigate={handleNavigate} />;
+      case 'admin_users':
+        return <UsersList currentPage={currentPage} onNavigate={handleNavigate} />;
+      case 'admin_user_detail':
+        return selectedUserId ? <UserDetail userId={selectedUserId} onNavigate={handleNavigate} /> : <UsersList onNavigate={handleNavigate} />;
+      case 'admin_projects':
+        return <ProjectsList currentPage={currentPage} onNavigate={handleNavigate} />;
+      case 'admin_subscriptions':
+        return <SubscriptionsList currentPage={currentPage} onNavigate={handleNavigate} />;
+      case 'admin_financial':
+        return <FinancialDashboard currentPage={currentPage} onNavigate={handleNavigate} />;
+      case 'admin_settings':
+        return <SystemSettings currentPage={currentPage} onNavigate={handleNavigate} />;
+      case 'admin_logs':
+        return <LogsViewer currentPage={currentPage} onNavigate={handleNavigate} />;
+      default:
+        return <Dashboard onNavigate={handleNavigate} />;
+    }
+  };
+
+  return (
+    <Layout currentPage={currentPage} onNavigate={handleNavigate}>
+      {renderPage()}
+    </Layout>
+  );
+}
+
+function App() {
+  return (
+    <BrowserRouter>
+      <AuthProvider>
+        <ThemeProvider>
+          <SettingsProvider>
+            <SubscriptionProvider>
+              <AdminProvider>
+                <Routes>
+                  {/* Route racine - redirige vers /public */}
+                  <Route path="/" element={<Navigate to="/public" replace />} />
+
+                  {/* Routes publiques - utilisent PublicLayout (sans sidebar) */}
+                  <Route path="/public" element={
+                    <PublicLayout>
+                      <PublicProjectsPage />
+                    </PublicLayout>
+                  } />
+                  <Route path="/public/:projectId" element={
+                    <PublicLayout>
+                      <PublicProjectDetail />
+                    </PublicLayout>
+                  } />
+                  
+                  {/* Routes juridiques (sans layout) */}
+                  <Route path="/cgu" element={<Cgu />} />
+                  <Route path="/confidentialite" element={<Confidentialite />} />
+                  <Route path="/mentions-legales" element={<MentionsLegales />} />
+                  
+                  {/* Route aide technique (sans layout) */}
+                  <Route path="/technical-help" element={<TechnicalHelpPage />} />
+                  
+                  {/* Route principale avec layout complet (sidebar + header) */}
+                  <Route path="/*" element={<AppContent />} />
+                </Routes>
+              </AdminProvider>
+            </SubscriptionProvider>
+          </SettingsProvider>
+        </ThemeProvider>
+      </AuthProvider>
+    </BrowserRouter>
+  );
+}
+
+export default App;

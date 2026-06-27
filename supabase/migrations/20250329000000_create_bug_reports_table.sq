@@ -1,0 +1,116 @@
+-- =====================================================
+-- MIGRATION: Création de la table bug_reports
+-- Date: 2025-03-29
+-- =====================================================
+
+-- Créer la table bug_reports
+CREATE TABLE IF NOT EXISTS bug_reports (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  session_id UUID REFERENCES sessions(id) ON DELETE SET NULL,
+  
+  -- Informations générales
+  title VARCHAR(255) NOT NULL,
+  description TEXT NOT NULL,
+  category VARCHAR(50) NOT NULL,
+  status VARCHAR(20) DEFAULT 'open',
+  difficulty INTEGER CHECK (difficulty >= 1 AND difficulty <= 5),
+  
+  -- Contexte
+  environment VARCHAR(50) DEFAULT 'development',
+  browser VARCHAR(100),
+  device VARCHAR(100),
+  app_version VARCHAR(50),
+  
+  -- Actions et solution
+  steps_taken TEXT,
+  hypothesis_tested TEXT,
+  solution TEXT,
+  resources_links TEXT[],
+  
+  -- Métriques
+  estimated_time_minutes INTEGER DEFAULT 0,
+  actual_time_minutes INTEGER DEFAULT 0,
+  resolved_at TIMESTAMP WITH TIME ZONE,
+  
+  -- Pièces jointes
+  attachments JSONB DEFAULT '[]',
+  
+  -- Tags
+  tags TEXT[],
+  
+  -- Audit
+  created_by UUID REFERENCES auth.users(id),
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  
+  -- Contraintes
+  CONSTRAINT valid_status CHECK (status IN ('open', 'in_progress', 'resolved', 'closed')),
+  CONSTRAINT valid_category CHECK (category IN ('ui', 'api', 'database', 'logic', 'performance', 'security', 'other')),
+  CONSTRAINT valid_environment CHECK (environment IN ('development', 'staging', 'production'))
+);
+
+-- Ajouter les commentaires pour documentation (affichés dans l'UI comme tooltips)
+COMMENT ON COLUMN bug_reports.status IS 'Statut du bug: open (Ouvert) → in_progress (En cours) → resolved (Résolu) → closed (Fermé)';
+COMMENT ON COLUMN bug_reports.difficulty IS 'Niveau de difficulté: 1=Facile, 2=Moyen, 3=Difficile, 4=Très difficile, 5=Extrême';
+COMMENT ON COLUMN bug_reports.category IS 'Catégorie du bug: ui (UI/UX), api (API), database (Base de données), logic (Logique métier), performance (Performance), security (Sécurité), other (Autre)';
+COMMENT ON COLUMN bug_reports.environment IS 'Environnement: development (Développement), staging (Préproduction), production (Production)';
+
+-- Créer les index pour performances
+CREATE INDEX IF NOT EXISTS idx_bug_reports_project_id ON bug_reports(project_id);
+CREATE INDEX IF NOT EXISTS idx_bug_reports_status ON bug_reports(status);
+CREATE INDEX IF NOT EXISTS idx_bug_reports_created_at ON bug_reports(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_bug_reports_category ON bug_reports(category);
+
+-- Activer RLS
+ALTER TABLE bug_reports ENABLE ROW LEVEL SECURITY;
+
+-- Politiques RLS
+-- 1. Les propriétaires peuvent tout faire sur leurs bugs
+CREATE POLICY "Users can manage bugs of their projects"
+ON bug_reports FOR ALL
+USING (
+  EXISTS (
+    SELECT 1 FROM projects
+    WHERE projects.id = bug_reports.project_id
+    AND projects.user_id = auth.uid()
+  )
+);
+
+-- 2. Les invités (shared projects) peuvent voir les bugs (mais pas modifier)
+CREATE POLICY "Invited users can view bugs of shared projects"
+ON bug_reports FOR SELECT
+USING (
+  EXISTS (
+    SELECT 1 FROM projects p
+    LEFT JOIN project_shares ps ON ps.project_id = p.id
+    WHERE p.id = bug_reports.project_id
+    AND p.visibility = 'shared'
+    AND ps.invited_email = auth.email()
+  )
+);
+
+-- 3. Les utilisateurs peuvent voir les bugs des projets publics
+CREATE POLICY "All users can view bugs of public projects"
+ON bug_reports FOR SELECT
+USING (
+  EXISTS (
+    SELECT 1 FROM projects
+    WHERE projects.id = bug_reports.project_id
+    AND projects.visibility = 'public'
+  )
+);
+
+-- Trigger pour mettre à jour updated_at
+CREATE OR REPLACE FUNCTION update_bug_reports_updated_at()
+RETURNS TRIGGER AS $$
+BEGIN
+  NEW.updated_at = NOW();
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trigger_update_bug_reports_updated_at
+  BEFORE UPDATE ON bug_reports
+  FOR EACH ROW
+  EXECUTE FUNCTION update_bug_reports_updated_at();

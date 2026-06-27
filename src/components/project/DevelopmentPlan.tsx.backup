@@ -1,0 +1,384 @@
+import { useState, useEffect } from 'react';
+import { FileText, Edit2, Clock, Users, Lightbulb, Paperclip, Bell } from 'lucide-react';
+import { supabase } from '../../lib/supabase';
+import { useAuth } from '../../contexts/AuthContext';
+import { PlanAccordionSection } from './PlanAccordionSection';
+import { PlanNotes } from './PlanNotes';
+import { PlanIdeas } from './PlanIdeas';
+import { PlanHistory } from './PlanHistory';
+import { PlanFiles } from './PlanFiles';
+import { PlanReminders } from './PlanReminders';
+import { DevelopmentPlanEditor } from './DevelopmentPlanEditor';
+import { formatDate } from '../../lib/dateUtils';
+import { storageService } from '../../services/storage.service';
+
+interface DevelopmentPlanProps {
+  projectId: string;  // ← AJOUTER
+  content: string | null;
+  updatedAt: string | null;
+  isOwner: boolean;
+  onEdit: () => void;
+  onSave?: (content: string) => void;
+}
+
+interface Idea {
+  id: string;
+  title: string;
+  description: string;
+  status: 'todo' | 'in_progress' | 'done' | 'abandoned';
+  created_at: string;
+}
+
+interface FileAttachment {
+  id: string;
+  name: string;
+  url: string;
+  size: number;
+  type: string;
+  path: string;
+  created_at: string;
+}
+
+interface Reminder {
+  id: string;
+  title: string;
+  description: string | null;
+  due_date: string;
+  is_completed: boolean;
+  created_at: string;
+}
+
+interface Version {
+  id: string;
+  version_number: number;
+  content: string;
+  notes: string | null;
+  created_at: string;
+  created_by: string | null;
+}
+
+export function DevelopmentPlan({ 
+  projectId,  // ← REÇU EN PROP
+  content, 
+  updatedAt, 
+  isOwner, 
+  onEdit, 
+  onSave 
+}: DevelopmentPlanProps) {
+  console.log('🔍 DevelopmentPlan monté avec projectId:', projectId);
+  
+  const { user } = useAuth();
+  const [notes, setNotes] = useState<string | null>(null);
+  const [ideas, setIdeas] = useState<Idea[]>([]);
+  const [versions, setVersions] = useState<Version[]>([]);
+  const [files, setFiles] = useState<FileAttachment[]>([]);
+  const [reminders, setReminders] = useState<Reminder[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showEditor, setShowEditor] = useState(false);
+
+  // Charger toutes les données du plan
+  useEffect(() => {
+    console.log('🔍 useEffect déclenché, projectId:', projectId);
+    if (projectId) {
+      loadPlanData();
+    } else {
+      console.log('❌ projectId est null/undefined');
+    }
+  }, [projectId]);
+
+  const loadPlanData = async () => {
+    console.log('🔍 loadPlanData début');
+    if (!projectId) {
+      console.log('❌ loadPlanData: projectId manquant');
+      return;
+    }
+    setLoading(true);
+
+    console.log('📡 Chargement des notes...');
+    // Charger les notes
+    const { data: projectData } = await supabase
+      .from('projects')
+      .select('plan_notes')
+      .eq('id', projectId)
+      .single();
+    if (projectData) {
+      console.log('✅ Notes chargées:', projectData.plan_notes);
+      setNotes(projectData.plan_notes);
+    } else {
+      console.log('⚠️ Aucune note trouvée');
+    }
+
+    console.log('📡 Chargement des idées...');
+    // Charger les idées (stockées dans plan_ideas JSONB)
+    const { data: ideasData } = await supabase
+      .from('projects')
+      .select('plan_ideas')
+      .eq('id', projectId)
+      .single();
+    if (ideasData?.plan_ideas) {
+      console.log('✅ Idées chargées:', ideasData.plan_ideas.length);
+      setIdeas(ideasData.plan_ideas);
+    } else {
+      console.log('⚠️ Aucune idée trouvée');
+    }
+
+    console.log('📡 Chargement des versions...');
+    // Charger l'historique des versions
+    const { data: versionsData } = await supabase
+      .from('plan_versions')
+      .select('*')
+      .eq('project_id', projectId)
+      .order('version_number', { ascending: false });
+    if (versionsData) {
+      console.log('✅ Versions chargées:', versionsData.length);
+      setVersions(versionsData);
+    } else {
+      console.log('⚠️ Aucune version trouvée');
+    }
+
+    // Charger les fichiers (à implémenter avec une table dédiée ou storage)
+    // Pour l'instant, on utilise un état vide
+    console.log('📡 Chargement des fichiers...');
+    setFiles([]);
+    console.log('✅ Fichiers chargés: 0');
+
+    console.log('📡 Chargement des rappels...');
+    // Charger les rappels
+    const { data: remindersData } = await supabase
+      .from('plan_reminders')
+      .select('*')
+      .eq('project_id', projectId)
+      .order('due_date', { ascending: true });
+    if (remindersData) {
+      console.log('✅ Rappels chargés:', remindersData.length);
+      setReminders(remindersData);
+    } else {
+      console.log('⚠️ Aucun rappel trouvé');
+    }
+
+    console.log('✅ loadPlanData terminé');
+    setLoading(false);
+  };
+
+  const updateNotes = async (newNotes: string) => {
+    if (!projectId) return;
+    const { error } = await supabase
+      .from('projects')
+      .update({ plan_notes: newNotes })
+      .eq('id', projectId);
+    if (!error) setNotes(newNotes);
+  };
+
+  const updateIdeas = async (newIdeas: Idea[]) => {
+    if (!projectId) return;
+    const { error } = await supabase
+      .from('projects')
+      .update({ plan_ideas: newIdeas })
+      .eq('id', projectId);
+    if (!error) setIdeas(newIdeas);
+  };
+
+  const updateReminders = async (newReminders: Reminder[]) => {
+    if (!projectId) return;
+    // Synchroniser avec la base (à implémenter avec upsert)
+    setReminders(newReminders);
+  };
+
+  const handleRestoreVersion = async (versionContent: string) => {
+    if (onSave) {
+      onSave(versionContent);
+    }
+    // Recharger l'historique après restauration
+    setTimeout(() => loadPlanData(), 500);
+  };
+
+  const handleUploadFiles = async (newFiles: File[]) => {
+    // Implémenter l'upload vers Supabase Storage
+    console.log('Upload files:', newFiles);
+    // Après upload, recharger la liste des fichiers
+    loadPlanData();
+  };
+
+  const handleDeleteFile = async (fileId: string, path: string) => {
+    await storageService.deleteFile(path);
+    loadPlanData();
+  };
+
+  if (loading) {
+    return (
+      <div className="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700">
+        <div className="flex items-center justify-center h-32">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+        </div>
+      </div>
+    );
+  }
+
+  const renderMarkdown = (text: string) => {
+    if (!text) return null;
+    const lines = text.split('\n');
+    return lines.map((line, idx) => {
+      if (line.startsWith('# ')) {
+        return <h1 key={idx} className="text-2xl font-bold text-gray-900 dark:text-white mt-4 mb-2">{line.slice(2)}</h1>;
+      }
+      if (line.startsWith('## ')) {
+        return <h2 key={idx} className="text-xl font-semibold text-gray-900 dark:text-white mt-3 mb-2">{line.slice(3)}</h2>;
+      }
+      if (line.startsWith('### ')) {
+        return <h3 key={idx} className="text-lg font-medium text-gray-800 dark:text-gray-200 mt-2 mb-1">{line.slice(4)}</h3>;
+      }
+      if (line.startsWith('- ')) {
+        return <li key={idx} className="ml-4 text-gray-700 dark:text-gray-300 list-disc">{line.slice(2)}</li>;
+      }
+      if (line.startsWith('- [x] ')) {
+        return <li key={idx} className="ml-4 text-gray-700 dark:text-gray-300 list-none"><span className="text-green-600 mr-2">✓</span>{line.slice(6)}</li>;
+      }
+      if (line.startsWith('- [ ] ')) {
+        return <li key={idx} className="ml-4 text-gray-700 dark:text-gray-300 list-none"><span className="text-gray-400 mr-2">○</span>{line.slice(6)}</li>;
+      }
+      if (line.startsWith('---')) {
+        return <hr key={idx} className="my-4 border-gray-200 dark:border-gray-700" />;
+      }
+      if (line.trim() === '') {
+        return <div key={idx} className="h-2" />;
+      }
+      return <p key={idx} className="text-gray-700 dark:text-gray-300 mb-1">{line}</p>;
+    });
+  };
+
+  return (
+    <div className="space-y-4">
+      {/* Section Contenu du plan (toujours visible) */}
+      <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+        <div className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-800/50 border-b border-gray-200 dark:border-gray-700">
+          <div className="flex items-center gap-2">
+            <FileText className="w-5 h-5 text-blue-500" />
+            <h3 className="font-semibold text-gray-900 dark:text-white">Contenu du plan</h3>
+            {updatedAt && (
+              <span className="text-xs text-gray-500">
+                Dernière modification : {formatDate(updatedAt, 'datetime-minutes')}
+              </span>
+            )}
+          </div>
+          {isOwner && (
+            <button
+              onClick={() => setShowEditor(true)}
+              className="flex items-center gap-1 px-3 py-1.5 text-sm text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors"
+            >
+              <Edit2 className="w-4 h-4" />
+              Modifier
+            </button>
+          )}
+        </div>
+        <div className="p-4">
+          {content ? (
+            <div className="prose prose-sm dark:prose-invert max-w-none">
+              {renderMarkdown(content)}
+            </div>
+          ) : (
+            <p className="text-gray-500 italic text-center py-8">Aucun contenu. Cliquez sur "Modifier" pour créer votre plan.</p>
+          )}
+        </div>
+      </div>
+
+      {/* Section Notes évolutives */}
+      <PlanAccordionSection
+        title="Notes évolutives"
+        icon={<FileText className="w-4 h-4" />}
+        count={notes ? 1 : 0}
+        buttonLabel={isOwner ? (notes ? "Modifier" : "Ajouter") : undefined}
+        onButtonClick={isOwner ? () => {} : undefined}
+        defaultOpen={false}
+      >
+        <PlanNotes
+          projectId={projectId || ''}
+          initialNotes={notes}
+          isOwner={isOwner}
+          onUpdate={updateNotes}
+        />
+      </PlanAccordionSection>
+
+      {/* Section Idées amélioratives */}
+      <PlanAccordionSection
+        title="Idées amélioratives"
+        icon={<Lightbulb className="w-4 h-4" />}
+        count={ideas.length}
+        buttonLabel={isOwner ? "Ajouter" : undefined}
+        onButtonClick={isOwner ? () => {} : undefined}
+        defaultOpen={false}
+      >
+        <PlanIdeas
+          projectId={projectId || ''}
+          ideas={ideas}
+          isOwner={isOwner}
+          onUpdate={updateIdeas}
+        />
+      </PlanAccordionSection>
+
+      {/* Section Historique des versions */}
+      <PlanAccordionSection
+        title="Historique des versions"
+        icon={<Clock className="w-4 h-4" />}
+        count={versions.length}
+        buttonLabel="Voir tout"
+        onButtonClick={() => {}}
+        defaultOpen={false}
+      >
+        <PlanHistory
+          projectId={projectId || ''}
+          versions={versions}
+          currentContent={content || ''}
+          onRestore={handleRestoreVersion}
+        />
+      </PlanAccordionSection>
+
+      {/* Section Fichiers joints */}
+      <PlanAccordionSection
+        title="Fichiers joints"
+        icon={<Paperclip className="w-4 h-4" />}
+        count={files.length}
+        buttonLabel={isOwner ? "Ajouter" : undefined}
+        onButtonClick={isOwner ? () => {} : undefined}
+        defaultOpen={false}
+      >
+        <PlanFiles
+          projectId={projectId || ''}
+          files={files}
+          isOwner={isOwner}
+          onUpload={handleUploadFiles}
+          onDelete={handleDeleteFile}
+        />
+      </PlanAccordionSection>
+
+      {/* Section Rappels */}
+      <PlanAccordionSection
+        title="Rappels"
+        icon={<Bell className="w-4 h-4" />}
+        count={reminders.filter(r => !r.is_completed).length}
+        buttonLabel={isOwner ? "Ajouter" : undefined}
+        onButtonClick={isOwner ? () => {} : undefined}
+        defaultOpen={false}
+      >
+        <PlanReminders
+          projectId={projectId || ''}
+          reminders={reminders}
+          isOwner={isOwner}
+          onUpdate={updateReminders}
+        />
+      </PlanAccordionSection>
+
+      {/* Modale d'édition du contenu Markdown */}
+      {showEditor && (
+        <DevelopmentPlanEditor
+          initialContent={content || null}
+          onSave={(newContent) => {
+            if (onSave) onSave(newContent);
+            setShowEditor(false);
+            loadPlanData();
+          }}
+          onClose={() => setShowEditor(false)}
+        />
+      )}
+    </div>
+  );
+}

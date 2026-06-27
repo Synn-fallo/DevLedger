@@ -1,0 +1,67 @@
+import { useState, ReactNode } from 'react';
+import { ChevronDown, ChevronRight } from 'lucide-react';
+
+interface PlanAccordionSectionProps {
+  title: string;
+  icon?: ReactNode;
+  count?: number;
+  buttonLabel?: string;
+  onButtonClick?: () => void;
+  children: ReactNode;
+  defaultOpen?: boolean;
+}
+
+export function PlanAccordionSection({
+  title,
+  icon,
+  count,
+  buttonLabel,
+  onButtonClick,
+  children,
+  defaultOpen = false
+}: PlanAccordionSectionProps) {
+  const [isOpen, setIsOpen] = useState(defaultOpen);
+
+  return (
+    <div className="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
+      <button
+        onClick={() => setIsOpen(!isOpen)}
+        className="w-full flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-800/50 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors text-left"
+      >
+        <div className="flex items-center gap-2">
+          {icon && <span className="text-gray-500">{icon}</span>}
+          <span className="font-medium text-gray-900 dark:text-white">{title}</span>
+          {count !== undefined && (
+            <span className="text-xs text-gray-500 bg-gray-200 dark:bg-gray-700 px-2 py-0.5 rounded-full">
+              {count}
+            </span>
+          )}
+        </div>
+        <div className="flex items-center gap-3">
+          {buttonLabel && onButtonClick && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onButtonClick();
+              }}
+              className="text-sm text-blue-600 dark:text-blue-400 hover:underline"
+            >
+              {buttonLabel}
+            </button>
+          )}
+          {isOpen ? (
+            <ChevronDown className="w-5 h-5 text-gray-400" />
+          ) : (
+            <ChevronRight className="w-5 h-5 text-gray-400" />
+          )}
+        </div>
+      </button>
+      
+      {isOpen && (
+        <div className="p-4 border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
+          {children}
+        </div>
+      )}
+    </div>
+  );
+}
